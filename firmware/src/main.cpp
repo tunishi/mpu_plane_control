@@ -1,4 +1,4 @@
-// MPU6050 -> roll/pitch/yaw, streamed over USB serial as CSV lines.
+// MPU6050 -> roll/pitch/yaw, published in RAM for the host to read over SWD.
 //
 // Wiring (I2C1):
 //   MPU6050 VCC -> 3V3
@@ -6,8 +6,8 @@
 //   MPU6050 SCL -> PB6
 //   MPU6050 SDA -> PB7
 //
-// Output: "roll,pitch,yaw\n" in degrees, ~100 Hz.
-// Serial input: send 'c' to recenter (zero) yaw and re-level roll/pitch.
+// The host (ST-Link/OpenOCD) reads g_roll/g_pitch/g_yaw directly from RAM.
+// Writing 1 to g_recenter_req re-levels roll/pitch and zeroes yaw.
 //
 // MPU6050 has no magnetometer, so yaw has no absolute reference: it is
 // obtained purely by integrating the gyro Z rate and *will* drift over
@@ -37,12 +37,13 @@ static const float PITCH_SIGN = 1.0f;
 static const float YAW_SIGN = 1.0f;
 
 static const float COMPLEMENTARY_ALPHA = 0.98f;
-static const uint32_t SEND_INTERVAL_US = 10000; // 100 Hz
+
+volatile float g_roll = 0, g_pitch = 0, g_yaw = 0;
+volatile uint8_t g_recenter_req = 0;
 
 static float gyroBiasX = 0, gyroBiasY = 0, gyroBiasZ = 0;
 static float roll = 0, pitch = 0, yaw = 0;
 static uint32_t lastUpdateUs = 0;
-static uint32_t lastSendUs = 0;
 
 static void mpuWrite(uint8_t reg, uint8_t value) {
   Wire.beginTransmission(MPU_ADDR);
@@ -111,8 +112,6 @@ static void recenter() {
 }
 
 void setup() {
-  Serial.begin(115200);
-
   pinMode(PC13, OUTPUT);
   digitalWrite(PC13, LOW); // LED on (active low) while calibrating
 
@@ -134,17 +133,12 @@ void setup() {
   digitalWrite(PC13, HIGH); // LED off = ready
 
   lastUpdateUs = micros();
-  lastSendUs = lastUpdateUs;
 }
 
 void loop() {
-  if (Serial.available()) {
-    while (Serial.available()) {
-      char c = Serial.read();
-      if (c == 'c' || c == 'C') {
-        recenter();
-      }
-    }
+  if (g_recenter_req) {
+    g_recenter_req = 0;
+    recenter();
   }
 
   int16_t ax, ay, az, gx, gy, gz;
@@ -171,12 +165,7 @@ void loop() {
           (1.0f - COMPLEMENTARY_ALPHA) * accelPitch;
   yaw += YAW_SIGN * gzDps * dt; // no absolute reference -> will drift
 
-  if (nowUs - lastSendUs >= SEND_INTERVAL_US) {
-    lastSendUs = nowUs;
-    Serial.print(roll, 2);
-    Serial.print(',');
-    Serial.print(pitch, 2);
-    Serial.print(',');
-    Serial.println(yaw, 2);
-  }
+  g_roll = roll;
+  g_pitch = pitch;
+  g_yaw = yaw;
 }

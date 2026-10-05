@@ -8,5 +8,9 @@
   --vc=100 ^
   --heading=270 ^
   --timeofday=noon ^
+  --prop:/engines/engine[0]/running=true ^
+  --prop:/controls/engines/engine[0]/throttle=0.7 ^
+  --prop:/controls/engines/engine[0]/mixture=1 ^
+  --prop:/controls/engines/engine[0]/magnetos=3 ^
   --generic=socket,in,45,,5501,udp,mpu-input ^
   --telnet=5500
